@@ -1,0 +1,13 @@
+# Flex/Bison generated files
+lex.yy.c
+parser.tab.c
+parser.tab.h
+
+# Compiled binaries
+*.exe
+*.o
+*.out
+
+# VS Code
+.vscode/
+.history/
