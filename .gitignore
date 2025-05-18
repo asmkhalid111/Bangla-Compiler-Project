@@ -10,4 +10,8 @@ parser.tab.h
 
 # VS Code
 .vscode/
-.history/
+.history/lex.yy.c
+parser.tab.c
+parser.tab.h
+banglacode
+banglacode.exe
