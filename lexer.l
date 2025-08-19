@@ -1,5 +1,5 @@
 %{
-#include "compiler.tab.h"
+#include "parser.tab.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -33,14 +33,15 @@ int bangla_to_int(const char* str) {
 [ \t\r\n]+                        { /* ignore whitespace, including carriage return */ }
 "//".* { /* ignore comments */ }
 
-"let"|"রাখো"                      { return LET; }
+"let"|"ধরি"                      { return LET; }
 "print"|"দেখাও"                   { return PRINT; }
 "input"|"ইনপুট"                   { return GET_INPUT; }
 "if"|"যদি"                        { return IF; }
-"elseif"|"নতুবা যদি"             { return ELSEIF; }
+"then"|"তাহলে"                    { return THEN; }
 "else"|"নতুবা"                    { return ELSE; }
+"endif"|"শেষ"                     { return ENDIF; }
 "while"|"যতক্ষণ"                  { return WHILE; }
-"break"|"বিরতি"                   { return BREAK; } // New break token
+"endwhile"|"থামো"                  { return ENDWHILE; }
 
 \"[^\"]*\"                        { yylval.str = strdup(yytext + 1); yylval.str[strlen(yylval.str) - 1] = '\0'; return STRING; }
 [0-9]+|[০-৯]+                     { yylval.num = bangla_to_int(yytext); return NUMBER; }
@@ -48,8 +49,6 @@ int bangla_to_int(const char* str) {
 
 
 "="                               { return EQUALS; }
-"{"                               { return LBRACE; } // Left Brace
-"}"                               { return RBRACE; } // Right Brace
 "+"                               { return PLUS; }
 "-"                               { return MINUS; }
 "*"                               { return MULTIPLY; }

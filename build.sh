@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# A script to build and run the Bangla-Compiler-V3 project.
+# A script to build and run the Bangla-Compiler project.
 
 # --- Color Codes for Output ---
 GREEN='\033[0;32m'
@@ -8,8 +8,8 @@ RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 # --- Step 1: Generate the Lexer ---
-echo "1. Generating the lexer from compiler.l..."
-flex compiler.l
+echo "1. Generating the lexer from lexer.l..."
+flex lexer.l
 if [ $? -ne 0 ]; then
     echo -e "${RED}Flex failed. Aborting.${NC}"
     exit 1
@@ -17,17 +17,17 @@ fi
 echo -e "${GREEN}   Lexer (lex.yy.c) generated successfully.${NC}"
 
 # --- Step 2: Generate the Parser ---
-echo "2. Generating the parser from compiler.y..."
-bison -d compiler.y
+echo "2. Generating the parser from parser.y..."
+bison -d parser.y
 if [ $? -ne 0 ]; then
     echo -e "${RED}Bison failed. Aborting.${NC}"
     exit 1
 fi
-echo -e "${GREEN}   Parser (compiler.tab.c and compiler.tab.h) generated successfully.${NC}"
+echo -e "${GREEN}   Parser (parser.tab.c and parser.tab.h) generated successfully.${NC}"
 
 # --- Step 3: Compile the C++ Code ---
 echo "3. Compiling the C++ source files..."
-g++ lex.yy.c compiler.tab.c -o compiler.exe
+g++ lex.yy.c parser.tab.c -o compiler.exe
 if [ $? -ne 0 ]; then
     echo -e "${RED}G++ compilation failed. Aborting.${NC}"
     exit 1

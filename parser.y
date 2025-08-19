@@ -4,39 +4,37 @@
 #include <string.h>
 
 // --- Platform-Specific Includes ---
+// Only include windows.h when compiling on a Windows system
 #ifdef _WIN32
 #include <windows.h>
 #endif
 
-// Forward declarations
+// Forward declarations for AST nodes and functions
 struct Node;
 int evaluate(struct Node* node);
 void execute_statement(struct Node* node);
+
 int yylex();
 void yyerror(const char *s);
 
-// --- Global flag for break statements ---
-int break_flag = 0;
-
-// --- AST Node Definitions ---
+// --- Abstract Syntax Tree (AST) Node Definitions ---
 typedef enum {
     NODE_TYPE_ASSIGN, NODE_TYPE_PRINT, NODE_TYPE_IF, NODE_TYPE_WHILE,
     NODE_TYPE_NUMBER, NODE_TYPE_ID, NODE_TYPE_STRING, NODE_TYPE_BINARY_OP,
-    NODE_TYPE_STMT_LIST, NODE_TYPE_INPUT, NODE_TYPE_BREAK
+    NODE_TYPE_STMT_LIST, NODE_TYPE_INPUT // New node type for input
 } NodeType;
 
 typedef struct Node {
     NodeType type;
-    struct Node *left;
-    struct Node *right;
-    char* value_str;
-    int value_num;
+    struct Node *left;  // General purpose left child/operand
+    struct Node *right; // General purpose right child/operand
+    char* value_str;    // For IDs and STRING literals
+    int value_num;      // For NUMBER literals
 } Node;
 
 // --- AST Creation Functions ---
 Node* create_node(NodeType type, Node* left, Node* right, const char* str_val, int num_val) {
     Node* node = (Node*)malloc(sizeof(Node));
-    if (!node) { yyerror("out of memory"); exit(1); }
     node->type = type;
     node->left = left;
     node->right = right;
@@ -45,17 +43,24 @@ Node* create_node(NodeType type, Node* left, Node* right, const char* str_val, i
     return node;
 }
 
-// --- Symbol Table ---
-typedef struct { char name[32]; int value; } Variable;
+// --- Symbol Table (remains the same) ---
+typedef struct {
+    char name[32];
+    int value;
+} Variable;
+
 Variable symtab[100];
 int symcount = 0;
+
 int get_var(const char* name) {
     for (int i = 0; i < symcount; i++) {
-        if (strcmp(symtab[i].name, name) == 0) return symtab[i].value;
+        if (strcmp(symtab[i].name, name) == 0)
+            return symtab[i].value;
     }
     printf("\033[1;31mError: Undefined variable %s\033[0m\n", name);
-    exit(1);
+    exit(1); // Exit on error
 }
+
 void set_var(const char* name, int value) {
     for (int i = 0; i < symcount; i++) {
         if (strcmp(symtab[i].name, name) == 0) {
@@ -75,15 +80,16 @@ void set_var(const char* name, int value) {
     struct Node* node;
 }
 
-// Tokens
-%token LET PRINT GET_INPUT IF ELSEIF ELSE WHILE EQUALS LBRACE RBRACE BREAK
+// Renamed INPUT to GET_INPUT to avoid conflict with windows.h
+%token LET PRINT GET_INPUT IF THEN ELSE ENDIF WHILE ENDWHILE EQUALS
 %token <num> NUMBER
 %token <str> STRING ID
+
 %token PLUS MINUS MULTIPLY DIVIDE
 %token LT GT EQ NEQ
 %token SEMICOLON
 
-%type <node> program stmt stmt_list expr if_stmt
+%type <node> program stmt stmt_list expr
 
 %left PLUS MINUS
 %left MULTIPLY DIVIDE
@@ -92,58 +98,56 @@ void set_var(const char* name, int value) {
 %%
 
 program:
-    stmt_list { execute_statement($1); }
-    | /* empty */ { $$ = NULL; }
+    /* A program can be empty or a list of statements */
+    stmt_list {
+        execute_statement($1);
+    }
+    | /* empty */                 { $$ = NULL; }
     ;
 
 stmt_list:
-    stmt { $$ = create_node(NODE_TYPE_STMT_LIST, $1, NULL, NULL, 0); }
-    | stmt_list stmt { $$ = create_node(NODE_TYPE_STMT_LIST, $1, $2, NULL, 0); }
+    /* A statement list is one statement, or a list followed by one statement */
+    stmt                          { $$ = create_node(NODE_TYPE_STMT_LIST, $1, NULL, NULL, 0); }
+    | stmt_list stmt              { $$ = create_node(NODE_TYPE_STMT_LIST, $1, $2, NULL, 0); }
     ;
 
 stmt:
-      LET ID EQUALS expr SEMICOLON { $$ = create_node(NODE_TYPE_ASSIGN, $4, NULL, $2, 0); }
-    | LET ID EQUALS GET_INPUT SEMICOLON {
-        Node* input_node = create_node(NODE_TYPE_INPUT, NULL, NULL, $2, 0);
-        $$ = create_node(NODE_TYPE_ASSIGN, input_node, NULL, $2, 0);
-      }
-    | PRINT expr SEMICOLON { $$ = create_node(NODE_TYPE_PRINT, $2, NULL, NULL, 0); }
-    | PRINT STRING SEMICOLON { $$ = create_node(NODE_TYPE_PRINT, NULL, NULL, $2, 0); }
-    | if_stmt SEMICOLON { $$ = $1; } // An if_stmt followed by a semicolon is a valid statement
-    | WHILE expr LBRACE stmt_list RBRACE SEMICOLON { $$ = create_node(NODE_TYPE_WHILE, $2, $4, NULL, 0); }
-    | BREAK SEMICOLON { $$ = create_node(NODE_TYPE_BREAK, NULL, NULL, NULL, 0); }
+      LET ID EQUALS expr SEMICOLON        { $$ = create_node(NODE_TYPE_ASSIGN, $4, NULL, $2, 0); }
+    | LET ID EQUALS GET_INPUT SEMICOLON   {
+                                            // Create an ASSIGN node where the value is a special INPUT node
+                                            Node* input_node = create_node(NODE_TYPE_INPUT, NULL, NULL, $2, 0);
+                                            $$ = create_node(NODE_TYPE_ASSIGN, input_node, NULL, $2, 0);
+                                          }
+    | PRINT expr SEMICOLON                { $$ = create_node(NODE_TYPE_PRINT, $2, NULL, NULL, 0); }
+    | PRINT STRING SEMICOLON              { $$ = create_node(NODE_TYPE_PRINT, NULL, NULL, $2, 0); }
+    | IF expr THEN stmt_list ELSE stmt_list ENDIF SEMICOLON { $$ = create_node(NODE_TYPE_IF, $2, create_node(NODE_TYPE_STMT_LIST, $4, $6, NULL, 0), NULL, 0); }
+    | WHILE expr THEN stmt_list ENDWHILE SEMICOLON { $$ = create_node(NODE_TYPE_WHILE, $2, $4, NULL, 0); }
     ;
-
-// New, unambiguous grammar for IF statements (without the semicolon)
-if_stmt:
-      IF expr LBRACE stmt_list RBRACE { $$ = create_node(NODE_TYPE_IF, $2, create_node(NODE_TYPE_STMT_LIST, $4, NULL, NULL, 0), NULL, 0); }
-    | IF expr LBRACE stmt_list RBRACE ELSE if_stmt { $$ = create_node(NODE_TYPE_IF, $2, create_node(NODE_TYPE_STMT_LIST, $4, $7, NULL, 0), NULL, 0); }
-    | IF expr LBRACE stmt_list RBRACE ELSE LBRACE stmt_list RBRACE { $$ = create_node(NODE_TYPE_IF, $2, create_node(NODE_TYPE_STMT_LIST, $4, $8, NULL, 0), NULL, 0); }
-    ;
-
 
 expr:
-      expr PLUS expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "+", 0); }
-    | expr MINUS expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "-", 0); }
-    | expr MULTIPLY expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "*", 0); }
-    | expr DIVIDE expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "/", 0); }
-    | expr LT expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "<", 0); }
-    | expr GT expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, ">", 0); }
-    | expr EQ expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "==", 0); }
-    | expr NEQ expr { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "!=", 0); }
-    | NUMBER { $$ = create_node(NODE_TYPE_NUMBER, NULL, NULL, NULL, $1); }
-    | ID { $$ = create_node(NODE_TYPE_ID, NULL, NULL, $1, 0); }
+      expr PLUS expr             { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "+", 0); }
+    | expr MINUS expr            { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "-", 0); }
+    | expr MULTIPLY expr         { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "*", 0); }
+    | expr DIVIDE expr           { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "/", 0); }
+    | expr LT expr               { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "<", 0); }
+    | expr GT expr               { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, ">", 0); }
+    | expr EQ expr               { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "==", 0); }
+    | expr NEQ expr              { $$ = create_node(NODE_TYPE_BINARY_OP, $1, $3, "!=", 0); }
+    | NUMBER                     { $$ = create_node(NODE_TYPE_NUMBER, NULL, NULL, NULL, $1); }
+    | ID                         { $$ = create_node(NODE_TYPE_ID, NULL, NULL, $1, 0); }
     ;
 
 %%
 
 // --- AST Traversal and Execution ---
+
 int evaluate(Node* node) {
     if (!node) return 0;
+
     switch(node->type) {
         case NODE_TYPE_NUMBER: return node->value_num;
-        case NODE_TYPE_ID: return get_var(node->value_str);
-        case NODE_TYPE_INPUT: {
+        case NODE_TYPE_ID:     return get_var(node->value_str);
+        case NODE_TYPE_INPUT: { // Handle input during evaluation
             int val;
             printf("\033[1;34mEnter value for %s: \033[0m", node->value_str);
             scanf("%d", &val);
@@ -167,38 +171,34 @@ int evaluate(Node* node) {
 }
 
 void execute_statement(Node* node) {
-    if (!node || break_flag) return;
+    if (!node) return;
+
     switch(node->type) {
         case NODE_TYPE_STMT_LIST:
             execute_statement(node->left);
-            if (break_flag) return;
             execute_statement(node->right);
             break;
         case NODE_TYPE_ASSIGN:
             set_var(node->value_str, evaluate(node->left));
             break;
         case NODE_TYPE_PRINT:
-            if (node->left) printf("\033[1;32m%d\033[0m\n", evaluate(node->left));
-            else printf("\033[1;36m%s\033[0m\n", node->value_str);
+            if (node->left) { // It's an expression
+                printf("\033[1;32m%d\033[0m\n", evaluate(node->left));
+            } else { // It's a string
+                printf("\033[1;36m%s\033[0m\n", node->value_str);
+            }
             break;
         case NODE_TYPE_IF:
             if (evaluate(node->left)) {
-                execute_statement(node->right->left);
+                execute_statement(node->right->left); // Execute the "then" block
             } else {
-                execute_statement(node->right->right);
+                execute_statement(node->right->right); // Execute the "else" block
             }
             break;
         case NODE_TYPE_WHILE:
             while (evaluate(node->left)) {
-                execute_statement(node->right);
-                if (break_flag) {
-                    break; // Exit the C while loop
-                }
+                execute_statement(node->right); // Execute the loop body
             }
-            break_flag = 0; // Reset flag after loop finishes
-            break;
-        case NODE_TYPE_BREAK:
-            break_flag = 1;
             break;
         default:
             printf("Error: Cannot execute node type %d\n", node->type);
@@ -207,16 +207,20 @@ void execute_statement(Node* node) {
 }
 
 // --- Main and Error Functions ---
+
 void yyerror(const char *s) {
     fprintf(stderr, "\033[1;31mParse error: %s\033[0m\n", s);
 }
 
 int main(int argc, char **argv) {
+    // Only set the console code page if compiling on Windows
     #ifdef _WIN32
-    SetConsoleOutputCP(65001);
+    SetConsoleOutputCP(65001); // 65001 is the code page for UTF-8
     #endif
+
     printf("\033[1;33m---Welcome to Our Mini Compiler---\033[0m\n");
-    printf("\033[1;35mType your code below (end with Ctrl-D):\033[0m\n");
+    printf("\033\033[0m\n");
+
     if (argc > 1) {
         extern FILE *yyin;
         yyin = fopen(argv[1], "r");
@@ -225,6 +229,7 @@ int main(int argc, char **argv) {
             return 1;
         }
     }
-    yyparse();
+
+    yyparse(); // This will now build the AST and then execute it
     return 0;
 }
